@@ -54,6 +54,23 @@ shout_blue=""
 # shout_white=""
 shout_reset=""
 
+
+# parse options
+while [ -n "${1:-}" ]; do
+  case "$1" in
+    -h|--help) usage && exit 0;;
+    -V|--version) printf "%s\n" "$shout_version" && exit 0;;
+    -o|--outdir) shift && shout_dir="$1"; shift;;
+    -q|--quiet) shout_log_level=3; shift;;
+    -r|--replace) should_replace=true; shift;;
+    -v|--verbose) shout_log_level=0; shift;;
+    --check) shout_check=true; shift;;
+    -*) echo "unexpected argument: $1" >&2 && usage >&2 && exit 1;;
+    *) break;;
+  esac
+done
+
+# utility functions
 is_installed() { command -v "$1" >/dev/null 2>&1; }
 no_op() { :; }
 iso_date() { date +"%Y-%m-%dT%H:%M:%SZ"; }
@@ -104,19 +121,6 @@ log_error() {
   printf "%sERRR%s\t%s\n" "$shout_red" "$shout_reset" "$*" >&2;
 }
 
-while [ -n "${1:-}" ]; do
-  case "$1" in
-    -h|--help) usage && exit 0;;
-    -V|--version) printf "%s\n" "$shout_version" && exit 0;;
-    -o|--outdir) shift && shout_dir="$1"; shift;;
-    -q|--quiet) shout_log_level=3; shift;;
-    -r|--replace) should_replace=true; shift;;
-    -v|--verbose) shout_log_level=0; shift;;
-    --check) shout_check=true; shift;;
-    -*) echo "unexpected argument: $1" >&2 && usage >&2 && exit 1;;
-    *) break;;
-  esac
-done
 if (
   test -t 2 && # stderr (device 2) is a tty
   test -z "${NO_COLOR:-}" && # the NO_COLOR variable isn't set
@@ -181,7 +185,7 @@ for f in "$@"; do
   log_debug "rendering $f -> $shout_dir/${f##*/}"
   shout_target="$shout_dir/$shout_time.${f##*/}"
   render "$f" > "$shout_target"
-  if diff "$f" "$shout_target" >"$shout_target.diff" 2>&1; then
+  if diff -u "$f" "$shout_target" >"$shout_target.diff" 2>&1; then
     log_info "no changes to $f"
     continue
   else
