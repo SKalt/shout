@@ -10,6 +10,7 @@
 ### -v | --verbose  Print the output file name.
 ### -h | --help     Print this help message.
 ### -V | --version  Print the version number.
+# TODO: parse marker options
 set -eu # fail on any unset variable or unhandled error
 usage() { grep '^###' "$0"  | sed 's/^### //g; s/^###//g'; }
 
@@ -25,6 +26,10 @@ shout_log_debug=0
 shout_check=false
 should_replace=true
 shout_log_level=1
+shout_program_start_marker="{{start"
+shout_program_end_marker="{{end"
+shout_output_start_marker="{{out"
+shout_output_end_marker="{{done"
 parse_log_level() {
   case "${1:-}" in
   error) shout_log_level=$shout_log_error;; # --quiet; filter out everything but errors
@@ -165,13 +170,21 @@ fi
 
 log_debug "check: $shout_check"
 
-awk_prog="$(cat ./shout.posix.awk)" # FIXME: inline this!
+# {{start}}
+# cat ./shout.posix.awk | sed "s/'/'\\\\''/g; s/^/  /g; "
+# {{end}}
+# {{out skip=2}}
+# shellcheck disable=SC2016
+awk_prog='
+'
+# {{done skip=1}}
+
 render() {
   awk \
-    -v program_start_marker='{{start' \
-    -v program_end_marker="{{end" \
-    -v output_start_marker="{{out" \
-    -v output_end_marker="{{done" \
+    -v program_start_marker="$shout_program_start_marker" \
+    -v program_end_marker="$shout_program_end_marker" \
+    -v output_start_marker="$shout_output_start_marker" \
+    -v output_end_marker="$shout_output_end_marker" \
     -v log_level="$shout_log_level" \
     -v red="$shout_red" \
     -v green="$shout_green" \
@@ -181,6 +194,10 @@ render() {
    "$awk_prog" "$1"
 }
 shout_time="$(iso_date)"
+if [ "$#" = 0 ]; then
+  log_error "no files to render"
+  exit 1
+fi
 for f in "$@"; do
   log_debug "rendering $f -> $shout_dir/${f##*/}"
   shout_target="$shout_dir/$shout_time.${f##*/}"
