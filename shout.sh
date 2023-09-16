@@ -2,7 +2,7 @@
 ### USAGE: shout [-h|--help]
 # -d | --delete   Delete the generator code from the output file.
 # -o | --outdir OUTNAME      Write the output to OUTNAME.
-# -r | --replace  Replace the input file with the output.
+### -r | --replace  Replace the input file with the output.
 ### -s STRING       Suffix all generated output lines with STRING.
 ### -x              Excise all the generated output without running the generators.
 ###     --check     Check that the files would not change if run again.
@@ -23,6 +23,7 @@ shout_log_debug=0
 
 # state :: options
 shout_check=false
+should_replace=true
 shout_log_level=1
 parse_log_level() {
   case "${1:-}" in
@@ -55,6 +56,7 @@ shout_reset=""
 
 is_installed() { command -v "$1" >/dev/null 2>&1; }
 no_op() { :; }
+iso_date() { date +"%Y-%m-%dT%H:%M:%SZ"; }
 require_clis() {
   for cli in "$@"; do
     if is_installed "$cli"; then
@@ -108,8 +110,9 @@ while [ -n "${1:-}" ]; do
     -V|--version) printf "%s\n" "$shout_version" && exit 0;;
     -o|--outdir) shift && shout_dir="$1"; shift;;
     -q|--quiet) shout_log_level=3; shift;;
+    -r|--replace) should_replace=true; shift;;
     -v|--verbose) shout_log_level=0; shift;;
-    --check) shout_check=true;;
+    --check) shout_check=true; shift;;
     -*) echo "unexpected argument: $1" >&2 && usage >&2 && exit 1;;
     *) break;;
   esac
@@ -166,10 +169,31 @@ render() {
     -v output_start_marker="{{out" \
     -v output_end_marker="{{done" \
     -v log_level="$shout_log_level" \
+    -v red="$shout_red" \
+    -v green="$shout_green" \
+    -v orange="$shout_orange" \
+    -v blue="$shout_blue" \
+    -v reset="$shout_reset" \
    "$awk_prog" "$1"
 }
-
-for f in "$@"; do 
+shout_time="$(iso_date)"
+for f in "$@"; do
   log_debug "rendering $f -> $shout_dir/${f##*/}"
-  render "$f" | tee "$shout_dir/${f##*/}"
+  shout_target="$shout_dir/$shout_time.${f##*/}"
+  render "$f" > "$shout_target"
+  if diff "$f" "$shout_target" >"$shout_target.diff" 2>&1; then
+    log_info "no changes to $f"
+    continue
+  else
+    # log_debug "$f"
+    if [ "$shout_check" = "true" ]; then
+      shout_exit_code=1
+    elif [ "$should_replace" = "true" ]; then
+      log_info "replacing $f"
+      mv -f "$shout_target" "$f"
+      continue
+    else
+      log_info "would replace $f"
+    fi
+  fi
 done

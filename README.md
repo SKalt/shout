@@ -18,6 +18,7 @@
 ```sh
 # shout version: 0.0.0
 # USAGE: shout [-h|--help]
+# -r | --replace  Replace the input file with the output.
 # -s STRING       Suffix all generated output lines with STRING.
 # -x              Excise all the generated output without running the generators.
 #     --check     Check that the files would not change if run again.
