@@ -48,9 +48,9 @@ shout_red=""
 shout_green=""
 shout_orange=""
 shout_blue=""
-shout_purple=""
-shout_teal=""
-shout_white=""
+# shout_purple=""
+# shout_teal=""
+# shout_white=""
 shout_reset=""
 
 is_installed() { command -v "$1" >/dev/null 2>&1; }
@@ -157,7 +157,6 @@ if [ $shout_exit_code -ne 0 ]; then
 fi
 
 log_debug "check: $shout_check"
-
 
 awk_prog="$(cat ./shout.posix.awk)" # FIXME: inline this!
 render() {

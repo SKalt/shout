@@ -160,43 +160,46 @@ BEGIN {
       log_debug("match::o::end:: " line)
       state = 4
       skip_lines=parse_skip(substr(line, output_line_end))
-    }
-    next
-  }
-  if (state == 4 ) { # done with output section
-    suffix=""
-    if (skip_lines > 0) {
-      # print the last skip_lines lines of the previously-rendered output section
-      _n_lines = split(prev_output, _lines, "\n")
-      for (_i = _n_lines - skip_lines; _i <= _n_lines; _i++) {
-        suffix = suffix _lines[_i] "\n"
+      if (skip_lines > 0) {
+        # print the last skip_lines lines of the previously-rendered output section
+        _n_lines = split(prev_output, _lines, "\n")
+        for (_i = _n_lines - skip_lines; _i < _n_lines; _i++) {
+          suffix = append_line(suffix, _lines[_i])
+        }
+        skip_lines=0
       }
+      suffix=append_line(suffix, line)
+      _program="sh -c 'set -eu && " shell_quote(program) " 2>&1'"
+      log_debug("exec::pre:: about to run " escape_newlines(_program))
+      program_exit=system(_program) # writes directly to stdout
+      log_debug("exec::post:: program finished with exit code " program_exit)
+      print suffix
+      if (program_exit > 0) {
+        log_error("program failed @ " FILENAME ":" NR)
+        exit_code++
+      } else {
+        log_debug("program succeeded @ " FILENAME ":" NR)
+      }
+      state = 0
+      program=""
+      prev_output=""
+      output=""
+      program_prefix=""
       skip_lines=0
     }
-    _program="sh -c 'set -eu && " shell_quote(program) " 2>&1'"
-    log_debug("exec::pre:: about to run " escape_newlines(_program))
-    program_exit=system(_program) # writes directly to stdout
-    log_debug("exec::post:: program finished with exit code " program_exit)
-    print suffix
-    if (program_exit > 0) {
-      log_error("program failed @ " FILENAME ":" NR)
-      exit_code++
-      print "ERROR"
-    } else {
-      log_debug("program succeeded @ " FILENAME ":" NR)
-    }
-    state = 0
-    program=""
-    prev_output=""
-    output=""
-    program_prefix=""
-    skip_lines=0
+    next
   }
 }
 END {
   if (state != 0) {
-    log_error("unexpected end of file")
     exit_code++
+    msg="Missing a "
+    if (state == 1) msg=msg program_end_marker
+    if (state == 2) msg=msg output_start_marker
+    if (state == 3) msg=msg output_end_marker
+    if (state == 4) msg=msg "???"
+    msg=msg" tag in " FILENAME " after line " NR
+    log_error(msg)
   }
   exit exit_code
 }

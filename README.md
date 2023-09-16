@@ -16,6 +16,7 @@
 <!-- {{end skip=1}} -->
 <!-- {{out skip=1}} -->
 ```sh
+# shout version: 0.0.0
 # USAGE: shout [-h|--help]
 # -s STRING       Suffix all generated output lines with STRING.
 # -x              Excise all the generated output without running the generators.
