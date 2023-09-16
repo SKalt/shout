@@ -146,6 +146,9 @@ BEGIN {
       program=_program
       skip_lines=0
     }
+    if (!program) {
+      log_error("missing program @ " FILENAME " line " NR)
+    }
     log_debug("program::construction::post " escape_newlines(program))
     _program=""
     output_line_start=match(line, output_start_marker)
@@ -170,6 +173,7 @@ BEGIN {
       log_debug("match::o::end:: " line)
       state = 4
       skip_lines=parse_skip(substr(line, output_line_end))
+      suffix=""
       if (skip_lines > 0) {
         # print the last skip_lines lines of the previously-rendered output section
         _n_lines = split(prev_output, _lines, "\n")
