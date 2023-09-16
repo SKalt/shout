@@ -11,6 +11,7 @@
 ### -h | --help     Print this help message.
 ### -V | --version  Print the version number.
 # TODO: parse marker options
+# TODO: prefix option for easy indenting, commenting, etc.
 set -eu # fail on any unset variable or unhandled error
 usage() { grep '^###' "$0"  | sed 's/^### //g; s/^###//g'; }
 
@@ -24,7 +25,7 @@ shout_log_debug=0
 
 # state :: options
 shout_check=false
-should_replace=true
+should_replace=false
 shout_log_level=1
 shout_program_start_marker="{{start"
 shout_program_end_marker="{{end"
@@ -134,7 +135,7 @@ if (
 if [ "$shout_should_use_color" = "true" ]; then
   shout_red="$(tput setaf 1)"
   shout_green="$(tput setaf 2)"
-  # shout_orange="$(tput setaf 3)"
+  shout_orange="$(tput setaf 3)"
   shout_blue="$(tput setaf 4)"
   # shout_purple="$(tput setaf 5)"
   # shout_teal="$(tput setaf 6)"
@@ -178,6 +179,7 @@ log_debug "check: $shout_check"
 awk_prog='
 '
 # {{done skip=1}}
+awk_prog="$(cat ./shout.posix.awk)"
 
 render() {
   awk \
@@ -206,15 +208,17 @@ for f in "$@"; do
     log_info "no changes to $f"
     continue
   else
-    # log_debug "$f"
     if [ "$shout_check" = "true" ]; then
+      log_error "would update $f"
       shout_exit_code=1
     elif [ "$should_replace" = "true" ]; then
       log_info "replacing $f"
-      mv -f "$shout_target" "$f"
+      cat "$shout_target" > "$f" # preserve file permissions
       continue
     else
       log_info "would replace $f"
     fi
   fi
 done
+
+exit $shout_exit_code

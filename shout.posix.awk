@@ -147,7 +147,7 @@ BEGIN {
       skip_lines=0
     }
     if (!program) {
-      log_error("missing program @ " FILENAME " line " NR)
+      log_warn("missing program @ " FILENAME " line " NR)
     }
     log_debug("program::construction::post " escape_newlines(program))
     _program=""
