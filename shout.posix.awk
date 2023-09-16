@@ -39,6 +39,16 @@ function escape_newlines(str) {
   gsub(/\n/, "\\n", result)
   return result
 }
+function input_file_directory() {
+  f=FILENAME
+  result=""
+  split(f, path_segments, "/")
+  for (i = 1; i < length(path_segments); i++) {
+    if (result) result=result "/" path_segments[i]
+    else result=path_segments[i]
+  }
+  return result
+}
 
 
 BEGIN {
@@ -169,7 +179,8 @@ BEGIN {
         skip_lines=0
       }
       suffix=append_line(suffix, line)
-      _program="sh -c 'set -eu && " shell_quote(program) " 2>&1'"
+      # TODO: move working directory to that of FILENAME
+      _program="sh -c 'set -eu && cd " input_file_directory() " && " shell_quote(program) " 2>&1'"
       log_debug("exec::pre:: about to run " escape_newlines(_program))
       program_exit=system(_program) # writes directly to stdout
       log_debug("exec::post:: program finished with exit code " program_exit)
