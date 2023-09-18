@@ -5,7 +5,7 @@
 `shout` is a portmanteau of "shell out".
 
 # Usage
-<!-- {{start skip=1}} -->
+<!-- {{{sh skip=1 -->
 ```sh
 {
   printf "shout version: "
@@ -13,21 +13,21 @@
   ./shout.sh --help
 } | sed 's/^/# /g'
 ```
-<!-- {{end skip=1}} -->
-<!-- {{out skip=1}} -->
+<!-- }}} skip=1 -->
+<!-- {{{out skip=1 -->
 ```sh
 # shout version: 0.0.0
 # USAGE: shout [-h|--help]
-# -r | --replace  Replace the input file with the output.
-# -s STRING       Suffix all generated output lines with STRING.
-# -x              Excise all the generated output without running the generators.
-#     --check     Check that the files would not change if run again.
-# -q | --quiet    Do not print the output file name.
-# -v | --verbose  Print the output file name.
-# -h | --help     Print this help message.
-# -V | --version  Print the version number.
+# -o | --outdir OUTNAME      Write the output to OUTNAME.
+# -r | --replace    Replace the input file with the output.
+#     --check       Check that the files would not change if run again.
+# --view-diff[=CMD] View the diff of the generated output.
+# -q | --quiet      Do not print the output file name.
+# -v | --verbose    Print the output file name.
+# -h | --help       Print this help message.
+# -V | --version    Print the version number.
 ```
-<!-- {{done skip=1}} -->
+<!-- }}} skip=1 -->
 
 ## When to use `shout`
 

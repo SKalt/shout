@@ -4,7 +4,6 @@
 # -x | --no-output               Excise all the generated output without running the generators.
 ### -o | --outdir OUTNAME      Write the output to OUTNAME.
 ### -r | --replace    Replace the input file with the output.
-### -s STRING         Suffix all generated output lines with STRING.
 ###     --check       Check that the files would not change if run again.
 ### --view-diff[=CMD] View the diff of the generated output.
 ### -q | --quiet      Do not print the output file name.
@@ -30,10 +29,10 @@ shout_check=false
 should_replace=false
 should_view_diff=false
 shout_log_level=1
-shout_program_start_marker="{{start"
-shout_program_end_marker="{{end"
-shout_output_start_marker="{{out"
-shout_output_end_marker="{{done"
+shout_program_start_marker="{{{sh" # shout:disable
+shout_program_end_marker="}}}" # shout:disable
+shout_output_start_marker="{{{out" # shout:disable
+shout_output_end_marker="}}}" # shout:disable
 view_diff_cmd="diff -u"
 # parse_log_level() {
 #   case "${1:-}" in
@@ -181,10 +180,9 @@ fi
 
 log_debug "check: $shout_check"
 
-# {{start}}
+# {{{sh
 # cat ./shout.posix.awk | sed "s/'/'\\\\''/g; s/^/  /g; "
-# {{end}}
-# {{out skip=2}}
+# }}}{{{out skip=2
 # shellcheck disable=SC2016
 awk_prog='
   #!/usr/bin/awk
@@ -408,8 +406,8 @@ awk_prog='
     exit exit_code
   }
 '
-# {{done skip=1}}
-
+# }}} skip=1
+awk_prog="$(cat ./shout.posix.awk)"
 render() {
   awk \
     -v program_start_marker="$shout_program_start_marker" \
@@ -422,6 +420,7 @@ render() {
     -v orange="$shout_orange" \
     -v blue="$shout_blue" \
     -v reset="$shout_reset" \
+    -v temp_dir="$shout_dir" \
    "$awk_prog" "$1"
 }
 shout_time="$(iso_date)"
@@ -429,6 +428,7 @@ if [ "$#" = 0 ]; then
   log_error "no files to render"
   exit 1
 fi
+printf '#!/bin/sh\n\n' > "$shout_dir/commands.sh"
 for f in "$@"; do
   log_debug "rendering $f -> $shout_dir/${f##*/}"
   shout_target="$shout_dir/$shout_time.${f##*/}"
