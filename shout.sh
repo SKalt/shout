@@ -17,11 +17,12 @@ usage() { grep '^###' "$0"  | sed 's/^### //g; s/^###//g'; }
 
 # global state
 # state :: constants
+# TODO: inline from ./VERSION
 shout_version="0.0.0"
 shout_log_error=3
 shout_log_warn=2
 shout_log_info=1
-shout_log_debug=0
+# shout_log_debug=0
 
 # state :: options
 shout_check=false
@@ -31,18 +32,18 @@ shout_program_start_marker="{{start"
 shout_program_end_marker="{{end"
 shout_output_start_marker="{{out"
 shout_output_end_marker="{{done"
-parse_log_level() {
-  case "${1:-}" in
-  error) shout_log_level=$shout_log_error;; # --quiet; filter out everything but errors
-  warn) shout_log_level=$shout_log_warn;;
-  info) shout_log_level=$shout_log_info;; # default
-  verbose) shout_log_level=$shout_log_debug;; # --verbose; show everything
-  *)
-    log_error "invalid log level: $1" >&2 
-    log_error "expected one of: quiet, warn, info, verbose" >&2
-    exit 1;;
-  esac
-}
+# parse_log_level() {
+#   case "${1:-}" in
+#   error) shout_log_level=$shout_log_error;; # --quiet; filter out everything but errors
+#   warn) shout_log_level=$shout_log_warn;;
+#   info) shout_log_level=$shout_log_info;; # default
+#   verbose) shout_log_level=$shout_log_debug;; # --verbose; show everything
+#   *)
+#     log_error "invalid log level: $1" >&2 
+#     log_error "expected one of: quiet, warn, info, verbose" >&2
+#     exit 1;;
+#   esac
+# }
 
 shout_dir=".cache/.shout"
 
@@ -432,8 +433,10 @@ for f in "$@"; do
       shout_exit_code=1
     elif [ "$should_replace" = "true" ]; then
       log_info "replacing $f"
+      cp "$f" "$shout_dir/$shout_time.$f.bak" # create a of the file to overwrite
       cat "$shout_target" > "$f" # preserve file permissions
       continue
+    # TODO: view-diff
     else
       log_info "would replace $f"
     fi
