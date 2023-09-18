@@ -89,9 +89,9 @@ iso_date() { date +"%Y-%m-%dT%H:%M:%SZ"; }
 require_clis() {
   for cli in "$@"; do
     if is_installed "$cli"; then
-      log_debug "found $cli @ $(command -v "$cli")"
+      log_debug "require_clis:: found $cli @ $(command -v "$cli")"
     else
-      log_error "missing required CLI: $1"
+      log_error "require_clis:: missing required CLI: $1"
       shout_exit_code=127 # command not found
     fi
   done
@@ -105,7 +105,7 @@ case "$shout_log_level" in
     ;;
   *)
     log_info() {
-      printf "%sINFO%s\t%s\n" "$shout_green" "$shout_reset" "$*" >&2;
+      printf "%sINFO%s\tsh::%s\n" "$shout_green" "$shout_reset" "$*" >&2;
     }
     ;;
 esac
@@ -114,7 +114,7 @@ case "$shout_log_level" in
   "$shout_log_info" | "$shout_log_warn" | "$shout_log_error") log_debug(){ no_op; } ;;
   *)
     log_debug() {
-      printf "%sDBUG%s\t%s\n" "$shout_blue" "$shout_reset" "$*" >&2;
+      printf "%sDBUG%s\tsh::%s\n" "$shout_blue" "$shout_reset" "$*" >&2;
     }
   ;;
 esac
@@ -123,14 +123,14 @@ case "$shout_log_level" in
   "$shout_log_error") log_warn() { no_op; } ;;
   *)
     log_warn() {
-      printf "%sWARN%s\t%s\n" "$shout_orange" "$shout_reset" "$*" >&2;
+      printf "%sWARN%s\tsh::%s\n" "$shout_orange" "$shout_reset" "$*" >&2;
     }
   ;;
 esac
 
 log_error() { 
   # always!
-  printf "%sERRR%s\t%s\n" "$shout_red" "$shout_reset" "$*" >&2;
+  printf "%sERRR%s\tsh::%s\n" "$shout_red" "$shout_reset" "$*" >&2;
 }
 
 if (
@@ -153,7 +153,11 @@ fi
 require_clis cat command sh tee test "[" diff mkdir printf sed awk env
 
 
-log_debug "color: $shout_should_use_color"
+log_debug "settings::color:: $shout_should_use_color"
+log_debug "settings::start:: $shout_program_start_marker"
+log_debug "settings::end:: $shout_program_end_marker"
+log_debug "settings::out:: $shout_output_start_marker"
+log_debug "settings::done:: $shout_output_end_marker"
 
 # validate the options and fill in defaults
 # TODO: handle tempdir maybe/not existing
@@ -441,7 +445,7 @@ for f in "$@"; do
       shout_exit_code=1
     elif [ "$should_replace" = "true" ]; then
       log_info "replacing $f"
-      cp "$f" "$shout_dir/$shout_time.$f.bak" # create a of the file to overwrite
+      cp "$f" "$shout_dir/$shout_time.${f##*/}.bak" # create a of the file to overwrite
       cat "$shout_target" > "$f" # preserve file permissions
     else
       log_info "would replace $f"
