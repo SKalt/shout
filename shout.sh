@@ -2,51 +2,59 @@
 ### USAGE: shout [-h|--help]
 # -d | --delete   Delete the generator code from the output file.
 # -x | --no-output               Excise all the generated output without running the generators.
-### -o | --outdir OUTNAME      Write the output to OUTNAME.
-### -r | --replace    Replace the input file with the output.
-###     --check       Check that the files would not change if run again.
-### --view-diff[=CMD] View the diff of the generated output.
-### -q | --quiet      Do not print the output file name.
-### -v | --verbose    Print the output file name.
 ### -h | --help       Print this help message.
 ### -V | --version    Print the version number.
-# TODO: parse marker options
-# TODO: prefix option for easy indenting, commenting, etc.
+### -o | --outdir DIR Write the output to DIR.
+### -r | --replace    Replace the input file with the output.
+### -c | --check      Check that the files would not change if run again.
+### --view-diff[=CMD] View the diff of the generated output. CMD is an arbitrary
+### --log-level=LEVEL Set the log level to LEVEL.
+###                   Allowed values: error, warn, info, debug, trace.
+### -q  | --quiet     Only print error logs
+### -v  | --verbose   Print info, warning, and debug logs
+### -vv | --trace     Print all logs
+###                   shell command accepting the before and after files.
+###                   defaults to `diff -u`
+
 set -eu # fail on any unset variable or unhandled error
 usage() { grep '^###' "$0"  | sed 's/^### //g; s/^###//g'; }
 
 # global state
 # state :: constants
-# TODO: inline from ./VERSION
+# {{{sh printf '\nshout_version="%s"\n# ' "$(cat ./VERSION)" }}}{{{out
 shout_version="0.0.0"
-shout_log_error=3
-shout_log_warn=2
-shout_log_info=1
-# shout_log_debug=0
+# }}}
+shout_log_error=5
+shout_log_warn=4
+shout_log_info=3
+shout_log_debug=2
+shout_log_trace=1
 
 # state :: options
 shout_check=false
 should_replace=false
 should_view_diff=false
-shout_log_level=1
+shout_log_level=$shout_log_info
 shout_program_start_marker="{{{sh" # shout:disable
 shout_program_end_marker="}}}" # shout:disable
 shout_output_start_marker="{{{out" # shout:disable
 shout_output_end_marker="}}}" # shout:disable
 view_diff_cmd="diff -u"
-# parse_log_level() {
-#   case "${1:-}" in
-#   error) shout_log_level=$shout_log_error;; # --quiet; filter out everything but errors
-#   warn) shout_log_level=$shout_log_warn;;
-#   info) shout_log_level=$shout_log_info;; # default
-#   verbose) shout_log_level=$shout_log_debug;; # --verbose; show everything
-#   *)
-#     log_error "invalid log level: $1" >&2 
-#     log_error "expected one of: quiet, warn, info, verbose" >&2
-#     exit 1;;
-#   esac
-# }
-
+parse_log_level() {
+  case "${1:-}" in
+  error) shout_log_level=$shout_log_error;; # --quiet; filter out everything but errors
+  warn) shout_log_level=$shout_log_warn;;
+  info) shout_log_level=$shout_log_info;; # default
+  verbose) shout_log_level=$shout_log_debug;; # --verbose; show debug info
+  trace) shout_log_level=$shout_log_trace;; # --trace; show everything, including debug
+  *)
+    log_error "invalid log level: $1" >&2 
+    log_error "expected one of: quiet, warn, info, verbose" >&2
+    exit 1;;
+  esac
+}
+encode_path() { printf "%s" "$1" | sed 's#%#%%#g; s#/#%#g'; }
+# decode_path() { printf "%s" "$1" | sed 's#%#/#g; s#//#%#g'; }
 shout_dir=".cache/.shout"
 
 # state :: mutable
@@ -58,8 +66,8 @@ shout_red=""
 shout_green=""
 shout_orange=""
 shout_blue=""
-# shout_purple=""
-# shout_teal=""
+shout_purple=""
+shout_teal=""
 # shout_white=""
 shout_reset=""
 
@@ -74,7 +82,10 @@ while [ -n "${1:-}" ]; do
     --view-diff) should_view_diff=true; shift;;
     --view-diff=*) should_view_diff=true; view_diff_cmd="${1#*=}"; shift;;
     -r|--replace) should_replace=true; shift;;
-    -v|--verbose) shout_log_level=0; shift;;
+    --log-level) shift && parse_log_level "$1"; shift;;
+    --log-level=*) parse_log_level "${1#*=}"; shift;;
+    -v|--verbose) shout_log_level=$shout_log_debug; shift;;
+    -vv|--trace) shout_log_level=$shout_log_trace; shift;;
     --check) shout_check=true; shift;;
     -*) echo "unexpected argument: $1" >&2 && usage >&2 && exit 1;;
     *) break;;
@@ -84,7 +95,6 @@ done
 # utility functions
 is_installed() { command -v "$1" >/dev/null 2>&1; }
 no_op() { :; }
-iso_date() { date +"%Y-%m-%dT%H:%M:%SZ"; }
 require_clis() {
   for cli in "$@"; do
     if is_installed "$cli"; then
@@ -142,8 +152,8 @@ if [ "$shout_should_use_color" = "true" ]; then
   shout_green="$(tput setaf 2)"
   shout_orange="$(tput setaf 3)"
   shout_blue="$(tput setaf 4)"
-  # shout_purple="$(tput setaf 5)"
-  # shout_teal="$(tput setaf 6)"
+  shout_purple="$(tput setaf 5)"
+  shout_teal="$(tput setaf 6)"
   # shout_white="$(tput setaf 7)"
   shout_reset="$(tput sgr0)"
 fi
@@ -183,49 +193,35 @@ log_debug "check: $shout_check"
 # {{{sh
 # cat ./shout.posix.awk | sed "s/'/'\\\\''/g; s/^/  /g; "
 # }}}{{{out skip=2
-# shellcheck disable=SC2016
+# shellcheck disable=SC2016,SC1003
 awk_prog='
   #!/usr/bin/awk
   # must use POSIX awk for compatibility reasons
   # see https://pubs.opengroup.org/onlinepubs/9699919799/utilities/awk.html
-  # variables
-  function parse_skip(line) {
-    log_debug("parse_skip:: " line)
-    if (match(line, "skip=[0-9]+")) {
-      log_debug("match::skip:: " line)
-      return substr(line, RSTART + 5, RLENGTH - 5)
-    } else {
-      log_debug("match::skip::none:: " line)
-      return 0
-    }
-  }
   function log_message(level, name, color, message) {
-    if (level >= log_level) {
-      print color name reset " " message >> "/dev/stderr"
-    }
+    if (level < log_level) return
+    _state = render_state(state)
+    if (_state) _state =  _state "::"
+    print color name reset "\tawk::" _state escape_newlines(message) >> "/dev/stderr"
   }
-  function log_debug(msg) { log_message(0, "DBUG", blue, msg) }
-  function log_info(msg) { log_message(1, "INFO", green, msg) }
-  function log_warn(msg) { log_message(2, "WARN", orange, msg) }
-  function log_error(msg) { log_message(3, "ERRR", red, msg) }
+  function log_trace(msg) { log_message(1, "TRCE", teal  , msg ) }
+  function log_debug(msg) { log_message(2, "DBUG", blue   , msg ) }
+  function log_info(msg)  { log_message(3, "INFO", green  , msg ) }
+  function log_warn(msg)  { log_message(4, "WARN", orange , msg ) }
+  function log_error(msg) { log_message(5, "ERRR", red    , msg ) }
   
-  function shell_quote(str) {
+  function escape(str, pattern, replacement) {
     result="" str
-    gsub(/'\''/, "'\''\\'\'''\''", result)
+    gsub(pattern, replacement, result)
     return result
   }
+  function escape_newlines(str) { return escape(str, "\n", "\\n") }
+  
   function append_line(str, line) {
-    if (str) {
-      return str "\n" line
-    } else {
-      return line
-    }
+    if (str) return str "\n" line
+    else     return line
   }
-  function escape_newlines(str) {
-    result="" str
-    gsub(/\n/, "\\n", result)
-    return result
-  }
+  
   function input_file_directory() {
     f=FILENAME
     result=""
@@ -236,170 +232,335 @@ awk_prog='
     }
     return result
   }
+  function row_pos(row_number)  { return FILENAME ":" row_number }
+  function render_pos(row, col) { return row_pos(row) ":" col }
+  function col() { 
+    _col = length($0) - length(_rest)+1
+    _assert(_col >= 0, "invalid column " _col " @ " row_pos(NR) " with `" _rest "`")
+    return _col
+  }
+  function pos() { return render_pos(NR, col()) }
+  function current_pos() { if (_current_pos) return " @ "_current_pos }
+  function set_current_pos() { _current_pos = pos() }
+  function get_pos(_state) {
+    return render_pos(line_numbers[_state], columns[_state])
+  }
+  function goto_state(to_state) {
+    log_debug(FILENAME " lines " line_numbers[state] ".." NR)
+    log_debug("goto::" render_state(to_state) " @ " pos())
+    line_numbers[state] = NR;
+    columns[state] = col();
+    state = to_state
+  }
   
+  function consume(marker, input) {
+    # set _matched and _rest globals to the sections of the input through the
+    # first match of marker and after it, respectively
+    # also sets RSTART and RLENGTH via `match()`
+    _input = "" input # ensure input is not mutated
+    if (match(_input, marker)) {
+      _matched = substr(_input, 1, RSTART+RLENGTH)
+      _rest = substr(_input, RSTART+RLENGTH)
+      log_trace("consume::`"marker"`::some" current_pos())
+    } else {
+      _matched = ""
+      _rest = _input
+      log_trace("consume::`"marker"`::none" current_pos())
+    }
+    return _rest
+  }
+  function parse_next_marker(input) {
+    _rest = consume(markers[state+1], input)
+    set_current_pos()
+    return _rest
+  }
+  function _assert(_expr, msg) {
+    if (!_expr) {
+      log_error(msg)
+      exit 1
+    }
+  }
+  
+  function parse_skip(input, _state) { # TODO: set current position
+    # sets the skip_lines global variable, returns remaining input
+    _input = "" input # ensure input is not mutated
+    skip_lines=0
+    if (match(_input, /^ *skip=[0-9]+/)) {
+      _matched = substr(_input, 1, RSTART+RLENGTH)
+      _rest = substr(_input, RSTART+RLENGTH+1)
+      match(_matched, /[0-9]+/)
+      skip_lines=substr(_input, RSTART, RLENGTH)
+      set_current_pos()
+      log_trace("skip::some:: " skip_lines " @ " pos())
+    } else {
+      _matched=""
+      _rest = _input
+      log_trace("skip::none:: @ " pos())
+    }
+    set_margin(_state, skip_lines)
+    return _rest
+  }
+  
+  function construct_program() {
+    # watch out: sets _matched, _rest, _input via consume()
+    _assert(FILENAME, "FILENAME not set")
+    _assert(NR, "NR not set")
+    log_debug("program::construction:: margin before:" margins[PROGRAM_START])
+    log_debug("program::construction:: margin after:" margins[PROGRAM_END])
+    log_trace("program::construction::pre " sections[PROGRAM])
+    n_lines = split(sections[PROGRAM], _lines, "\n")
+    log_debug("n_lines:: " n_lines)
+    _program=""
+    for (i = 1; i <= n_lines; i++) {
+      if (i <= margins[PROGRAM_START]) {
+        log_trace("program::construction::skip:: `" _lines[i] "`")
+        continue
+      }
+      if (margins[PROGRAM_END] && i >= (n_lines - margins[PROGRAM_END])) {
+        log_trace("program::construction::break:: `" _lines[i] "`")
+        break
+      }
+      log_trace("program::construction::consider::line "i" `" _lines[i] "`")
+      _lines[i] = consume("^"program_prefix, _lines[i])
+      log_trace("program::construction::append:: `" _lines[i] "`")
+      _program=append_line(_program, _lines[i])
+    }
+    
+    if (!_program) log_warn("missing program @ " get_pos(PROGRAM_START))
+    n_commands++
+    target_file=temp_dir"/command."n_commands".sh"
+    print "#!/bin/sh"v                                  >  target_file
+    print "# extracted from " get_pos(PROGRAM_START)    >> target_file
+    print "set -e"                                      >> target_file
+    print "cd " input_file_directory()                  >> target_file
+    print _program                                      >> target_file
+    return target_file
+  }
+  
+  function write_str(str) {
+    log_trace("writing::str::" str)
+    sections[state] = sections[state] str
+  }
+  function write_line(str){
+    log_trace("writing::line::" str)
+    sections[state] = sections[state] str "\n" 
+  }
+  function reset_margins() {
+    for (i=PROGRAM_START; i<= OUTPUT_END; i+=2) margins[i] = 0
+  }
+  function reset_sections() {
+    for (i=PROGRAM_START; i<= OUTPUT_END; i++) sections[i] = ""
+  }
+  function reset_positions() {
+    # positions[TEXT] denotes the start of the current text block
+    line_numbers[PROGRAM_START] = 0; columns[PROGRAM_START] = 0
+    line_numbers[PROGRAM_END]   = 0; columns[PROGRAM_END]   = 0
+    line_numbers[OUTPUT_START]  = 0; columns[OUTPUT_START]  = 0
+    line_numbers[OUTPUT_END]    = 0; columns[OUTPUT_END]    = 0
+  }
+  function reset_all() {
+    reset_positions()
+    reset_sections()
+    reset_margins()
+  }
+  
+  function flush_sections() {
+    program_file = construct_program()
+  
+    _buffer=""
+    _buffer = _buffer sections[PROGRAM_START]
+    _buffer = _buffer sections[PROGRAM]
+    _buffer = _buffer sections[PROGRAM_END]
+    _buffer = _buffer sections[INTERMEDIATE]
+    _buffer = _buffer sections[OUTPUT_START]
+  
+    _n_lines = split(sections[OUTPUT], _lines, "\n")
+    if (margins[OUTPUT_START]) {
+      for (i=1; i <= margins[OUTPUT_START] && i <= _n_lines; i++) {
+        _buffer = _buffer _lines[i] "\n"
+      }
+    }
+    printf "%s", _buffer
+    _buffer=""
+    log_debug("exec::pre:: about to run " program_file)
+    program_exit=system("sh " program_file) # writes stdout/err directly to stdout
+    if (program_exit > 0) {
+      log_error("exec::post:: program failed @ " get_pos(PROGRAM_START) " with exit code " program_exit)
+      log_info("you can find the exact text of the program in " temp_dir "/commands.sh")
+      exit_code++
+    } else {
+      log_debug("exec::post:: program succeeded @ " get_pos(PROGRAM_START) " with exit code " program_exit)
+    }
+    if (margins[OUTPUT_END]) {
+      for (i=(_n_lines-margins[OUTPUT_END]); i <= _n_lines; i++) {
+        if (i > margins[OUTPUT_START]) _buffer = append_line(_buffer, _lines[i])
+      }
+    }
+    _buffer = _buffer sections[OUTPUT_END]
+    printf "%s", _buffer
+    reset_sections()
+    reset_margins()
+  }
+  function validate_marker(marker) {
+    _assert(marker, "marker`" marker "` not set")
+    _assert((!match(marker, /[ \t\r\n]/)), "marker `" marker "` cannot contain whitespace")
+  }
+  function set_margin(_state, n_lines) {
+    _assert(!margins[_state], "margin::nonzero:: " render_state(_state) "=" margins[_state] " section @ " pos())
+    margins[_state] = n_lines
+    log_debug("margin::" render_state(_state) "::" margins[_state] " lines @ " pos())
+  }
+  function render_state(_state) { return names[_state] }
   
   BEGIN {
     # the following variables MUST be set
-    # eof_error: true or false
-    # bin_dir: directory where shout helpers are located
-    if (!program_start_marker) {
-      log_error("program_start_marker not set")
-      exit 1
-    }
-    if (!program_end_marker) {
-      log_error("program_end_marker not set")
-      exit 1
-    }
-    if (!output_start_marker) {
-      log_error("output_start_marker not set")
-      exit 1
-    }
-    if (!output_end_marker) {
-      log_error("output_end_marker not set")
-      exit 1
-    }
-    # program_start_marker: start of the shout block
-    # program_end_marker: end of the shout block
-    # output_start_marker: start of the output block
-    # output_end_marker: end of the output block
+    _assert(temp_dir, "temp_dir not set")
+    _assert((log_level >=0), "invalid log_level " log_level)
     # log_level: 1 (debug), 2 (info), 3 (warn), 4 (error)
-    state = 0
-    # 0: before program
-    # 1: in program
-    # 2: after program
-    # 3: in output
-    # 4: after output (goto 1)
-    log_debug("log_level:: " log_level)
-    program=""
-    prev_output=""
-    output=""
-    program_prefix=""
-    exit_code=0
+    _input = ""
+    _matched = ""
+    _rest = ""
+    n_commands=0
+    # states ##################################################
+    TEXT          = 1; names[TEXT]          = "TEXT"          ;
+    PROGRAM_START = 2; names[PROGRAM_START] = "PROGRAM_START" ;
+    PROGRAM       = 3; names[PROGRAM]       = "PROGRAM"       ;
+    PROGRAM_END   = 4; names[PROGRAM_END]   = "PROGRAM_END"   ;
+    INTERMEDIATE  = 5; names[INTERMEDIATE]  = "INTERMEDIATE"  ;
+    OUTPUT_START  = 6; names[OUTPUT_START]  = "OUTPUT_START"  ;
+    OUTPUT        = 7; names[OUTPUT]        = "OUTPUT"        ;
+    OUTPUT_END    = 8; names[OUTPUT_END]    = "OUTPUT_END"    ;
+  
+    markers[PROGRAM_START] = program_start_marker
+    markers[PROGRAM_END]   = program_end_marker
+    markers[OUTPUT_START]  = output_start_marker
+    markers[OUTPUT_END]    = output_end_marker
+    for (i=PROGRAM_START; i<= OUTPUT_END; i+=2) { # all start/end markers are even
+      validate_marker(markers[i])
+    }
+  
+    state = TEXT
+  
     skip_lines=0
+    log_debug("log_level:: " log_level)
+    program_prefix = ""
+    program = ""
+    prev_output = ""
+    output = ""
+    exit_code = 0
+  
+    reset_all()
+    line_numbers[TEXT] = 1
+    column_numbers[TEXT] = 1
     # TODO: fail fast?
   }
   {
-    line=$0
-    log_debug(FILENAME " line " NR " loop::state=" state ";skip_lines=" skip_lines ":: " substr(line, 1, 10))
-    if (state == 0) { # parsing text as normal
-      program_line_start=match(line, program_start_marker)
-      if (program_line_start > 0) {
-        log_debug("match::p::start:: " line)
-        print line
-        state = 1
-        program="" # just to be sure
-        program_prefix=substr(line, 1, program_line_start - 1)
-        program_prefix_len=length(program_prefix)
-        skip_lines=parse_skip(substr(line, program_line_start))
-      } else {
-        print line
+    _rest = $0
+    if (state == TEXT) {
+      if (match(_rest, "shout:disable")) {
+        print _rest
+        next
       }
+      _rest = parse_next_marker(_rest)
+      if (!_matched) {
+        print _rest
+        next
+      }
+      printf "%s", substr(_input, 1, RSTART - 1)
+      goto_state(PROGRAM_START)
+      write_str(substr(_input, RSTART, RLENGTH))
+      program_prefix=substr(_matched, 1, RSTART - 1)
+    }
+    if (state == PROGRAM_START) {
+      _rest = parse_skip(_rest, state)
+      if (_matched) {
+        log_debug("full-line @ " pos() " :: `" _matched "`")
+        write_line(_input)
+        goto_state(PROGRAM)
+        next
+      }
+      log_debug("PROGRAM_START::partial-line @ " pos())
+      goto_state(PROGRAM) # always transition to PROGRAM
+    }
+    if (state == PROGRAM) {
+      _rest = parse_next_marker(_rest)
+      if (!_matched) {
+        write_line(_rest)
+        next
+      } else {
+        write_str(substr(_input, 1, RSTART - 1))
+        goto_state(PROGRAM_END)
+        write_str(substr(_input, RSTART, RLENGTH))
+        log_debug("PROGRAM:: " FILENAME " lines " line_numbers[PROGRAM_START] ".." NR)
+      }
+    }
+    if (state == PROGRAM_END) {
+      _rest=parse_skip(_rest, state)
+      if (_matched) {
+        log_debug("full-line @ " pos() " :: `" _matched "`")
+        write_line(_matched _rest)
+        goto_state(INTERMEDIATE)
+        next
+      }
+      log_debug("PROGRAM_END::partial-line @ " pos())
+      goto_state(INTERMEDIATE)
+    }
+    if (state == INTERMEDIATE) {
+      _rest=parse_next_marker(_rest)
+      if (!_matched) {
+        write_line(_rest)
+        next
+      }
+      write_str(substr(_input, 1, RSTART - 1))
+      log_debug("INTERMEDIATE:: " FILENAME " lines " line_numbers[PROGRAM_END] ".." NR)
+      goto_state(OUTPUT_START)
+      write_str(substr(_input, RSTART, RLENGTH))
+    }
+    if (state == OUTPUT_START) {
+      _rest=parse_skip(_rest, state)
+      if (_matched) {
+        write_line(_matched _rest)
+        goto_state(OUTPUT)
+        next
+      }
+      goto_state(OUTPUT)
+    }
+    if (state == OUTPUT) {
+      _rest=parse_next_marker(_rest)
+      if (!_matched) {
+        write_line(_rest)
+        next
+      }
+      write_str(substr(_input, 1, RSTART - 1))
+      goto_state(OUTPUT_END)
+      write_str(substr(_input, RSTART, RLENGTH))
+    }
+    if (state == OUTPUT_END) {
+      _rest=parse_skip(_rest, state)
+      _stash=_rest # avoid overwriting _rest in flush_sections()
+      if (_matched) {
+        write_line(_matched _rest)
+        flush_sections()
+      } else {
+        flush_sections()
+        print _stash
+      }
+      _rest = ""
+      goto_state(TEXT)
       next
     }
-    if (state == 1) { # in the program
-      print line # always re-emit the program
-      if (skip_lines > 0) {
-        log_debug("skip:: " line)
-        skip_lines--
-        next
-      }
-      program_line_end=match(line, program_end_marker)
-      if (program_line_end > 0) {
-        log_debug("match::p::end:: " line)
-        state = 2
-        skip_lines=parse_skip(substr(line, program_line_end))
-        next
-      } else {
-        if (substr(line, 1, program_prefix_len) == program_prefix) {
-          _val = substr(line, length(program_prefix) + 1)
-        } else {
-          _val = line
-        }
-        program = append_line(program, _val)
-        next
-      }
-    }
-    if (state == 2) { # program ended
-      print line # always re-emit post-program, pre-output text
-      if (skip_lines > 0) {
-        # print all but the last `skip_lines` lines of the program
-        n_lines = split(program, _lines, "\n")
-        log_debug("program::construction::pre " escape_newlines(program))
-        log_debug("n_lines:: " n_lines)
-        _program=""
-        for (_i = 1; _i + skip_lines <= n_lines; _i++) {
-          _program=append_line(_program, _lines[_i])
-        }
-        program=_program
-        skip_lines=0
-      }
-      if (!program) {
-        log_warn("missing program @ " FILENAME " line " NR)
-      }
-      log_debug("program::construction::post " escape_newlines(program))
-      _program=""
-      output_line_start=match(line, output_start_marker)
-      if (output_line_start > 0) {
-        state = 3
-        skip_lines=parse_skip(substr(line, output_line_start))
-        next
-      } else {
-        next
-      }
-    }
-    if (state == 3) { # in the output section
-      if (skip_lines > 0) {
-        skip_lines--
-        log_debug("skip:: " line)
-        print line
-        next
-      }
-      prev_output=prev_output "\n" line
-      output_line_end=match(line, output_end_marker)
-      if (output_line_end > 0) {
-        log_debug("match::o::end:: " line)
-        state = 4
-        skip_lines=parse_skip(substr(line, output_line_end))
-        suffix=""
-        if (skip_lines > 0) {
-          # print the last skip_lines lines of the previously-rendered output section
-          _n_lines = split(prev_output, _lines, "\n")
-          for (_i = _n_lines - skip_lines; _i < _n_lines; _i++) {
-            suffix = append_line(suffix, _lines[_i])
-          }
-          skip_lines=0
-        }
-        suffix=append_line(suffix, line)
-        # TODO: move working directory to that of FILENAME
-        _program="sh -c '\''set -eu && cd " input_file_directory() " && " shell_quote(program) " 2>&1'\''"
-        log_debug("exec::pre:: about to run " escape_newlines(_program))
-        program_exit=system(_program) # writes directly to stdout
-        log_debug("exec::post:: program finished with exit code " program_exit)
-        print suffix
-        if (program_exit > 0) {
-          log_error("program failed @ " FILENAME ":" NR)
-          exit_code++
-        } else {
-          log_debug("program succeeded @ " FILENAME ":" NR)
-        }
-        state = 0
-        program=""
-        prev_output=""
-        output=""
-        program_prefix=""
-        skip_lines=0
-      }
-      next
-    }
+    _assert(false, "invalid state " state " @ " pos())
   }
   END {
-    if (state != 0) {
+    if (state != TEXT) {
       exit_code++
       msg="Missing a "
-      if (state == 1) msg=msg program_end_marker
-      if (state == 2) msg=msg output_start_marker
-      if (state == 3) msg=msg output_end_marker
-      if (state == 4) msg=msg "???"
+      if (state == PROGRAM_START ) msg = msg program_end_marker
+      if (state == PROGRAM       ) msg = msg output_start_marker
+      if (state == PROGRAM_END   ) msg = msg output_start_marker
+      if (state == OUTPUT_START  ) msg = msg output_end_marker
+      if (state == OUTPUT        ) msg = msg output_end_marker
+      _assert((state != OUTPUT_END), "Should never be in state " OUTPUT_END " @ EOF in " pos())
       msg=msg" tag in " FILENAME " after line " NR
       log_error(msg)
     }
@@ -407,7 +568,7 @@ awk_prog='
   }
 '
 # }}} skip=1
-awk_prog="$(cat ./shout.posix.awk)"
+
 render() {
   awk \
     -v program_start_marker="$shout_program_start_marker" \
@@ -419,19 +580,36 @@ render() {
     -v green="$shout_green" \
     -v orange="$shout_orange" \
     -v blue="$shout_blue" \
+    -v purple="$shout_purple" \
+    -v teal="$shout_teal" \
     -v reset="$shout_reset" \
-    -v temp_dir="$shout_dir" \
+    -v temp_dir="$target_dir" \
    "$awk_prog" "$1"
 }
-shout_time="$(iso_date)"
 if [ "$#" = 0 ]; then
   log_error "no files to render"
   exit 1
 fi
-printf '#!/bin/sh\n\n' > "$shout_dir/commands.sh"
+# rotate tempdirs
+last_shout_dir="$shout_dir/last"
+current_shout_dir="$shout_dir/current"
+if [ -d "$last_shout_dir" ]; then
+  log_debug "removing $last_shout_dir"
+  rm -rf "$last_shout_dir"
+fi
+if [ -d "$current_shout_dir" ]; then 
+  log_debug "moving $current_shout_dir -> $last_shout_dir"
+  mv "$current_shout_dir" "$last_shout_dir"
+fi
+log_debug "creating $current_shout_dir"
+mkdir -p "$current_shout_dir"
+
 for f in "$@"; do
-  log_debug "rendering $f -> $shout_dir/${f##*/}"
-  shout_target="$shout_dir/$shout_time.${f##*/}"
+  _f="$(encode_path "$f")"
+  target_dir="$current_shout_dir/$_f"
+  mkdir -p "$target_dir"
+  shout_target="$target_dir/${f##*/}"
+  log_debug "rendering $f -> $shout_target"
   render "$f" > "$shout_target"
   if diff -u "$f" "$shout_target" >"$shout_target.diff" 2>&1; then
     log_info "no changes to $f"
@@ -445,7 +623,9 @@ for f in "$@"; do
       shout_exit_code=1
     elif [ "$should_replace" = "true" ]; then
       log_info "replacing $f"
-      cp "$f" "$shout_dir/$shout_time.${f##*/}.bak" # create a of the file to overwrite
+      backup_target="$shout_target.bak"
+      log_info "backing up $f -> $backup_target"
+      cp "$f" "$backup_target" # create a of the file to overwrite
       cat "$shout_target" > "$f" # preserve file permissions
     else
       log_info "would replace $f"
