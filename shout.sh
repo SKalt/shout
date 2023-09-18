@@ -1,15 +1,16 @@
 #!/bin/sh
 ### USAGE: shout [-h|--help]
 # -d | --delete   Delete the generator code from the output file.
-# -o | --outdir OUTNAME      Write the output to OUTNAME.
-### -r | --replace  Replace the input file with the output.
-### -s STRING       Suffix all generated output lines with STRING.
-### -x              Excise all the generated output without running the generators.
-###     --check     Check that the files would not change if run again.
-### -q | --quiet    Do not print the output file name.
-### -v | --verbose  Print the output file name.
-### -h | --help     Print this help message.
-### -V | --version  Print the version number.
+# -x | --no-output               Excise all the generated output without running the generators.
+### -o | --outdir OUTNAME      Write the output to OUTNAME.
+### -r | --replace    Replace the input file with the output.
+### -s STRING         Suffix all generated output lines with STRING.
+###     --check       Check that the files would not change if run again.
+### --view-diff[=CMD] View the diff of the generated output.
+### -q | --quiet      Do not print the output file name.
+### -v | --verbose    Print the output file name.
+### -h | --help       Print this help message.
+### -V | --version    Print the version number.
 # TODO: parse marker options
 # TODO: prefix option for easy indenting, commenting, etc.
 set -eu # fail on any unset variable or unhandled error
@@ -27,11 +28,13 @@ shout_log_info=1
 # state :: options
 shout_check=false
 should_replace=false
+should_view_diff=false
 shout_log_level=1
 shout_program_start_marker="{{start"
 shout_program_end_marker="{{end"
 shout_output_start_marker="{{out"
 shout_output_end_marker="{{done"
+view_diff_cmd="diff -u"
 # parse_log_level() {
 #   case "${1:-}" in
 #   error) shout_log_level=$shout_log_error;; # --quiet; filter out everything but errors
@@ -69,6 +72,8 @@ while [ -n "${1:-}" ]; do
     -V|--version) printf "%s\n" "$shout_version" && exit 0;;
     -o|--outdir) shift && shout_dir="$1"; shift;;
     -q|--quiet) shout_log_level=3; shift;;
+    --view-diff) should_view_diff=true; shift;;
+    --view-diff=*) should_view_diff=true; view_diff_cmd="${1#*=}"; shift;;
     -r|--replace) should_replace=true; shift;;
     -v|--verbose) shout_log_level=0; shift;;
     --check) shout_check=true; shift;;
@@ -428,6 +433,9 @@ for f in "$@"; do
     log_info "no changes to $f"
     continue
   else
+    if [ "$should_view_diff" = "true" ]; then
+      $view_diff_cmd "$f" "$shout_target"
+    fi
     if [ "$shout_check" = "true" ]; then
       log_error "would update $f"
       shout_exit_code=1
@@ -435,8 +443,6 @@ for f in "$@"; do
       log_info "replacing $f"
       cp "$f" "$shout_dir/$shout_time.$f.bak" # create a of the file to overwrite
       cat "$shout_target" > "$f" # preserve file permissions
-      continue
-    # TODO: view-diff
     else
       log_info "would replace $f"
     fi
