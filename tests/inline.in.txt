@@ -1,3 +1,0 @@
-
-even in the {{{sh printf " %s" ok }}}{{{out ok}}} middle of a line
-
