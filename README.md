@@ -4,6 +4,11 @@
 
 `shout` is a portmanteau of "shell out".
 
+# Installation
+
+Copy `./shout.sh` into your repo.
+It's a single file with no dependencies outside of POSIX utilities.
+
 # Usage
 
 ## Basic example
@@ -44,13 +49,20 @@ You should use `shout` when you don't have access to python, don't want to pull 
 <!-- {{{out skip=1 -->
 ```sh
 # shout version: 0.0.0
-# USAGE: shout [-h|--help]
+# USAGE: shout [-h|--help] [-V|--version] [-o|--outdir DIR]
+#              [-r|--replace] [-c|--check] [-a|--accept] [-d|--diff[=CMD]]
+#              [--log-level=LEVEL] [-q|--quiet] [-v|--verbose] [-vv|--trace]
+#              FILE...
+# 
 # -h | --help       Print this help message.
 # -V | --version    Print the version number.
 # -o | --outdir DIR Write the output to DIR.
 # -r | --replace    Replace the input file with the output.
 # -c | --check      Check that the files would not change if run again.
-# --view-diff[=CMD] View the diff of the generated output. CMD is an arbitrary
+# -a | --accept     Accept the current changes and update the input file.
+# -d | --diff[=CMD] View the diff of the generated output. CMD is an arbitrary
+#                   shell command accepting the before and after files.
+#                   Defaults to the value of $SHOUT_DIFF_CMD or `diff -u`
 # --log-level=LEVEL Set the log level to LEVEL.
 #                   Allowed values: error, warn, info, debug, trace.
 # -q  | --quiet     Only print error logs
@@ -143,7 +155,7 @@ cat "$0" |      # $0 is relative to shout's pwd
   sed 's/^# extracted from .*/# extracted from <PATH>:<LINE>:<COL>/g'
 }}}{{{out skip=1 -->
 ```sh
-# contents of .cache/.shout/current/.%README.md/command.6.sh
+# contents of ./.cache/.shout/current/.%README.md/command.6.sh
 #!/bin/sh
 # extracted from <PATH>:<LINE>:<COL>
 set -e

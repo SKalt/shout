@@ -1,13 +1,18 @@
 #!/bin/sh
-### USAGE: shout [-h|--help]
-# -d | --delete   Delete the generator code from the output file.
-# -x | --no-output               Excise all the generated output without running the generators.
+### USAGE: shout [-h|--help] [-V|--version] [-o|--outdir DIR]
+###              [-r|--replace] [-c|--check] [-a|--accept] [-d|--diff[=CMD]]
+###              [--log-level=LEVEL] [-q|--quiet] [-v|--verbose] [-vv|--trace]
+###              FILE...
+###
 ### -h | --help       Print this help message.
 ### -V | --version    Print the version number.
 ### -o | --outdir DIR Write the output to DIR.
 ### -r | --replace    Replace the input file with the output.
 ### -c | --check      Check that the files would not change if run again.
-### --view-diff[=CMD] View the diff of the generated output. CMD is an arbitrary
+### -a | --accept     Accept the current changes and update the input file.
+### -d | --diff[=CMD] View the diff of the generated output. CMD is an arbitrary
+###                   shell command accepting the before and after files.
+###                   Defaults to the value of $SHOUT_DIFF_CMD or `diff -u`
 ### --log-level=LEVEL Set the log level to LEVEL.
 ###                   Allowed values: error, warn, info, debug, trace.
 ### -q  | --quiet     Only print error logs
@@ -31,15 +36,18 @@ shout_log_debug=2
 shout_log_trace=1
 
 # state :: options
-shout_check=false
-should_replace=false
-should_view_diff=false
+shout_mode="" # options: diff, check, replace, accept
+set_mode() { 
+  [ -n "$shout_mode" ] && log_error "$shout_mode" && exit 1;
+  shout_mode="$1";
+}
+
 shout_log_level=$shout_log_info
 shout_program_start_marker="{{{sh" # shout:disable
-shout_program_end_marker="}}}" # shout:disable
+shout_program_end_marker="}}}"     # shout:disable
 shout_output_start_marker="{{{out" # shout:disable
-shout_output_end_marker="}}}" # shout:disable
-view_diff_cmd="diff -u"
+shout_output_end_marker="}}}"      # shout:disable
+view_diff_cmd="${SHOUT_DIFF_CMD:-diff -u}"
 parse_log_level() {
   case "${1:-}" in
   error) shout_log_level=$shout_log_error;; # --quiet; filter out everything but errors
@@ -54,8 +62,8 @@ parse_log_level() {
   esac
 }
 encode_path() { printf "%s" "$1" | sed 's#%#%%#g; s#/#%#g'; }
-# decode_path() { printf "%s" "$1" | sed 's#%#/#g; s#//#%#g'; }
-shout_dir=".cache/.shout"
+decode_path() { printf "%s" "$1" | sed 's#%#/#g; s#//#%#g'; }
+shout_dir="./.cache/.shout"
 
 # state :: mutable
 shout_should_use_color=false
@@ -78,15 +86,16 @@ while [ -n "${1:-}" ]; do
     -h|--help) usage && exit 0;;
     -V|--version) printf "%s\n" "$shout_version" && exit 0;;
     -o|--outdir) shift && shout_dir="$1"; shift;;
+    -a|--accept)   set_mode "accept"; shift;;
+    -d|--diff)   set_mode "diff"; shift;;
+    --diff=*) set_mode "diff"; view_diff_cmd="${1#*=}"; shift;;
+    -r|--replace)  set_mode "replace"; shift;;
+    --check)       set_mode "check"; shift;;
     -q|--quiet) shout_log_level=3; shift;;
-    --view-diff) should_view_diff=true; shift;;
-    --view-diff=*) should_view_diff=true; view_diff_cmd="${1#*=}"; shift;;
-    -r|--replace) should_replace=true; shift;;
     --log-level) shift && parse_log_level "$1"; shift;;
     --log-level=*) parse_log_level "${1#*=}"; shift;;
     -v|--verbose) shout_log_level=$shout_log_debug; shift;;
     -vv|--trace) shout_log_level=$shout_log_trace; shift;;
-    --check) shout_check=true; shift;;
     -*) echo "unexpected argument: $1" >&2 && usage >&2 && exit 1;;
     *) break;;
   esac
@@ -188,7 +197,7 @@ if [ $shout_exit_code -ne 0 ]; then
   exit $shout_exit_code
 fi
 
-log_debug "check: $shout_check"
+log_debug "mode: $shout_mode"
 
 # {{{sh
 # cat ./shout.posix.awk | sed "s/'/'\\\\''/g; s/^/  /g; "
@@ -586,50 +595,108 @@ render() {
     -v temp_dir="$target_dir" \
    "$awk_prog" "$1"
 }
-if [ "$#" = 0 ]; then
-  log_error "no files to render"
-  exit 1
-fi
-# rotate tempdirs
-last_shout_dir="$shout_dir/last"
+
 current_shout_dir="$shout_dir/current"
-if [ -d "$last_shout_dir" ]; then
-  log_debug "removing $last_shout_dir"
-  rm -rf "$last_shout_dir"
+last_shout_dir="$shout_dir/last"
+
+
+if [ "$#" = 0 ]; then
+  case "$shout_mode" in
+    accept|diff) # pull up all the files from last run
+      find "$current_shout_dir" -type d |
+        sed "s#^$current_shout_dir##g; s#^/##g" | {
+          while read -r _f; do
+            if [ -z "$_f" ]; then continue; fi
+            log_debug "processing $_f"
+            original_path="$(decode_path "$_f")"
+            log_debug "original_path=$original_path"
+            original_basename="${original_path##*/}"
+            log_debug "original_basename=$original_basename"
+            cached="$current_shout_dir/$_f/$original_basename"
+            if [ ! -f "$original_path" ]; then log_error "missing original $original_path" && exit 127; fi
+            if [ ! -f "$cached" ]; then log_error "missing cache $cached" && exit 127; fi
+            case "$shout_mode" in
+              diff)
+                $view_diff_cmd "$original_path" "$cached"
+                ;;
+              accept)
+                backup_target="$cached.bak"
+                log_info "backing up $original_path -> $backup_target"
+                cp "$original_path" "$backup_target"   # create a copy of the file to overwrite
+                log_info "accepting $cached"
+                cat "$cached" > "$original_path"
+                ;;
+            esac
+          done
+        }
+        exit $shout_exit_code
+      ;;
+    *)
+      log_error "no files to render"
+      exit 1
+  esac
 fi
-if [ -d "$current_shout_dir" ]; then 
-  log_debug "moving $current_shout_dir -> $last_shout_dir"
-  mv "$current_shout_dir" "$last_shout_dir"
-fi
-log_debug "creating $current_shout_dir"
-mkdir -p "$current_shout_dir"
+
+case "$shout_mode" in
+  diff|check|replace)
+    if [ -d "$last_shout_dir" ]; then
+      log_debug "removing $last_shout_dir"
+      rm -rf "$last_shout_dir"
+    fi
+    if [ -d "$current_shout_dir" ]; then 
+      log_debug "moving $current_shout_dir -> $last_shout_dir"
+      mv "$current_shout_dir" "$last_shout_dir"
+    fi
+    log_debug "creating $current_shout_dir"
+    mkdir -p "$current_shout_dir"
+    ;;
+  
+  accept) # preserve the current shout_dir
+    if [ ! -d "$current_shout_dir" ]; then
+      log_error "$current_shout_dir does not exist"
+      exit 127
+    fi
+    ;;
+esac
 
 for f in "$@"; do
   _f="$(encode_path "$f")"
   target_dir="$current_shout_dir/$_f"
-  mkdir -p "$target_dir"
   shout_target="$target_dir/${f##*/}"
+  
   log_debug "rendering $f -> $shout_target"
+  if [ "$shout_mode" = "accept" ]; then
+    if [ ! -f "$shout_target" ]; then
+      log_error "missing $shout_target" && exit 127;
+    fi
+    log_info "accepting $f"
+    cat "$shout_target" > "$f"
+    continue
+  fi
+
+  mkdir -p "$target_dir"
   render "$f" > "$shout_target"
-  if diff -u "$f" "$shout_target" >"$shout_target.diff" 2>&1; then
+  if (diff -u "$f" "$shout_target" >"$shout_target.diff" 2>&1); then
     log_info "no changes to $f"
     continue
   else
-    if [ "$should_view_diff" = "true" ]; then
-      $view_diff_cmd "$f" "$shout_target"
-    fi
-    if [ "$shout_check" = "true" ]; then
-      log_error "would update $f"
-      shout_exit_code=1
-    elif [ "$should_replace" = "true" ]; then
-      log_info "replacing $f"
-      backup_target="$shout_target.bak"
-      log_info "backing up $f -> $backup_target"
-      cp "$f" "$backup_target" # create a of the file to overwrite
-      cat "$shout_target" > "$f" # preserve file permissions
-    else
-      log_info "would replace $f"
-    fi
+    case "$shout_mode" in
+      diff) 
+        $view_diff_cmd "$f" "$shout_target"
+        ;;
+      check)
+        log_error "would update $f"
+        shout_exit_code=1
+        ;;
+      replace)
+        log_info "replacing $f"
+        backup_target="$shout_target.bak"
+        log_info "backing up $f -> $backup_target"
+        cp "$f" "$backup_target"   # create a copy of the file to overwrite
+        cat "$shout_target" > "$f" # preserve file permissions
+        ;;
+      *) log_info "would replace $f" ;;
+    esac
   fi
 done
 
