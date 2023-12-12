@@ -1,6 +1,11 @@
 #!/usr/bin/awk
-# must use POSIX awk for compatibility reasons
+
+# © Steven Kalt
+# SPDX-License-Identifier: BSD-3-Clause
+
+# only use POSIX awk functionality for compatibility reasons
 # see https://pubs.opengroup.org/onlinepubs/9699919799/utilities/awk.html
+
 function log_message(level, name, color, message) {
   if (level < log_level) return
   _state = render_state(state)

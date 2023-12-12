@@ -1,4 +1,8 @@
 #!/bin/sh
+
+# © Steven Kalt
+# SPDX-License-Identifier: BSD-3-Clause
+
 ### USAGE: shout [-h|--help] [-V|--version] [-o|--outdir DIR]
 ###              [-r|--replace] [-c|--check] [-a|--accept] [-d|--diff[=CMD]]
 ###              [--log-level=LEVEL] [-q|--quiet] [-v|--verbose] [-vv|--trace]
@@ -200,13 +204,13 @@ fi
 log_debug "mode: $shout_mode"
 
 # {{{sh
-# cat ./shout.posix.awk | sed "s/'/'\\\\''/g; s/^/  /g; "
+# cat ./shout.posix.awk | sed "s/'/'\\\\''/g; s/^/  /g;" | tail +6
 # }}}{{{out skip=2
 # shellcheck disable=SC2016,SC1003
 awk_prog='
-  #!/usr/bin/awk
-  # must use POSIX awk for compatibility reasons
+  # only use POSIX awk functionality for compatibility reasons
   # see https://pubs.opengroup.org/onlinepubs/9699919799/utilities/awk.html
+  
   function log_message(level, name, color, message) {
     if (level < log_level) return
     _state = render_state(state)
